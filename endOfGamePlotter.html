@@ -1,0 +1,394 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+    <script src="https://cdn.plot.ly/plotly-2.11.1.min.js"></script>
+    <!--<script src="plotly-2.11.1.min.js"></script>-->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Londrina+Solid&family=Saira+Condensed:wght@100&display=swap" rel="stylesheet">
+</head>
+
+<body>
+
+    <p>My attempt at making an end of game plot</p>
+    <div id="tester" style="width:600px;height:400px;background-color:#DEFFF4;"></div>
+
+    <script>
+        TESTER = document.getElementById('tester');
+        // Modify data
+        // TODO: these should be arguments coming from the game, but I will hard code them for this example
+        var round_day = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        var daily_player = [450, 941.5, 481, 265, 2820, 1021.5, 1020, 1044, 733.7, 2245]
+        var daily_gurobi = [600, 1345, 481, 265, 3760, 1135, 1360, 1160, 1265, 2245]
+        var daily_gap = [0.25, 0.3, 0, 0, 0.25, 0.1, 0.25, 0.1, 0.42, 0]
+
+        // Player did poorly
+        //var round_day = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        //var daily_player = [60, 269, -96.1999999999999, 0, 0, 0, 0, 116, 379.5, -224.5]
+        //var daily_gurobi = [600, 1345, 481, 265, 3760, 1135, 1360, 1160, 1265, 2245]
+        //var daily_gap = [0.9, 0.8, 1.2, 1, 1, 1, 1, 0.9, 0.7, 1.1]
+
+        // Player did very well
+        //var round_day = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        //var daily_player = [582, 1318.1, 456.95, 265, 3760, 1135, 1360, 1171.6, 1265, 2245]
+        //var daily_gurobi = [600, 1345, 481, 265, 3760, 1135, 1360, 1160, 1265, 2245]
+        //var daily_gap = [0.03, 0.02, 0.05, 0, 0, 0, 0, -0.01, 0, 0]
+
+
+        // Calculate the running totals
+        var total_player = []
+        var total_gurobi = []
+        var total_gap = []
+        daily_player.reduce((prev, curr, i) => total_player[i] = prev + curr, 0) 
+        daily_gurobi.reduce((prev, curr, i) => total_gurobi[i] = prev + curr, 0)
+        total_gap = total_gurobi.map((g, i) => (g - total_player[i])/g) // Different from daily gaps
+
+        // Get the days that match Gurobi TODO: Do we want to have 'matched gurobi' markers?
+        var total_player_matches = []
+        var round_day_matches = []
+        for(var i = 0; i < daily_gap.length; i++)
+            if (daily_gap[i] <= 0){
+                total_player_matches.push(total_player[i])
+                round_day_matches.push(round_day[i])
+            }
+
+        // Calculate best day and worst day (based on daily_gap)
+        var day_best = daily_gap.indexOf(Math.min.apply(Math, daily_gap))+1
+        var day_worst = daily_gap.indexOf(Math.max.apply(Math, daily_gap))+1
+        
+        // Parameters for plotting
+        var y_min = 0
+        var y_max = Math.max(Math.max.apply(Math, total_player) ,Math.max.apply(Math, total_gurobi) )*1.3 
+        var x_min = Math.min(Math.min.apply(Math, round_day) ,Math.min.apply(Math, round_day) ) - 2 // buffer added to make room for big markers on day 1 and the last day
+        var x_max = Math.max(Math.max.apply(Math, round_day) ,Math.max.apply(Math, round_day) ) + 1 // buffer added to make room for big markers on day 1 and the last day
+        // TODO: Make sure these are the right colors
+        var color_bg = "DEFFF4" // light green from the map
+        var color_player = '7EE9F8' // light cyan-ish blue from the buildings
+        var color_gurobi = '245581' // darker blue from the buildings
+        var color_red = 'E8576A' // Red-ish
+        var color_gold = 'F7CE46' // Trophy gold
+
+        // These are all explicit (rather than using default) for the purposes of calculating the text angles
+        var layout_width = 600
+        var layout_height = 400
+        var layout_margin_l = 0
+        var layout_margin_r = 70
+        var layout_margin_t = 50
+        var layout_margin_b = 40
+        var annotation_width = 100
+        var annotation_ax = annotation_width/2 +10
+
+        // Calculate text angle for "____ total profit" labels
+        var page_width = layout_width - layout_margin_l - layout_margin_r - annotation_width - (annotation_ax - annotation_width/2)
+        var page_height = layout_height - layout_margin_t - layout_margin_b
+        var scale_y_per_pixel = (y_max - y_min)/(page_height)
+        var scale_x_per_pixel = (Math.max.apply(Math, round_day)  - Math.min.apply(Math, round_day) )/(page_width)
+        var centertext_node_player = total_player.length - 3 // We will center the text around the point at this index
+        var centertext_node_gurobi = total_player.length - 4        
+
+        // For the angle calc, I will try to have the angle match the average slope from (centertext_node - 1) to (centertext_node + ).
+        // To calculate, I use tan(angle) = [# y pixels] / [# x pixels]
+        //  [# y pixels] = (y2 - y1)/scale_y_per_pixel
+        //  [# x pixels] = (x2 - x1)/scale_y_per_pixel
+        //  atan returns values in radians, so I converted to degrees
+        var textangle_player = 180 / Math.PI * Math.atan(( (total_player[centertext_node_player + 1] - total_player[centertext_node_player - 1]) / scale_y_per_pixel ) / ( (round_day[centertext_node_player + 1] - round_day[centertext_node_player - 1])/scale_x_per_pixel ))
+        var textangle_gurobi = 180 / Math.PI * Math.atan(( (total_gurobi[centertext_node_gurobi + 1] - total_gurobi[centertext_node_gurobi - 1]) / scale_y_per_pixel ) / ( (round_day[centertext_node_player + 1] - round_day[centertext_node_player - 1])/scale_x_per_pixel ))
+
+        // Set text offset for "____ total profit" labels
+        var offset_gurobi = 12
+        var offset_player = -12
+        if (total_gap[total_gap.length-1] <= 0.2) 
+            // Label won't fit underneath the curve, we need to put it on top
+            offset_player = 12 
+    
+        // Formatting for gurobucks
+        let gurobucks = Intl.NumberFormat("en-US", {
+            maximumFractionDigits: 0,
+        });
+
+        // Define trace
+        var trace_player = {
+            x: round_day,
+            y: total_player,
+            text: total_gap,
+            name: 'your total',
+            fill: 'tozeroy', // makes this an area chart
+            type: 'scatter',
+            mode: 'lines',
+            line: {
+                width: 0, 
+                color: color_player, // Color needed for hover label
+            },
+            fillcolor: color_player,
+            hovertemplate: 'You: ₲%{y:,.0f} <i>(%{text:.0%} total gap)</i><extra></extra>', // TODO: Do we want to show the daily or running gap?  
+        };
+
+        var trace_gurobi = {
+            x: round_day, 
+            y: total_gurobi,
+            name: 'optimal total',
+            fill: 'tozeroy',
+            type: 'scatter',
+            mode: 'lines',
+            line: {
+                width: 0,
+                color: color_gurobi, // Color needed for hover label
+            },
+            fillcolor: color_gurobi,
+            hovertemplate: 'Optimal: ₲%{y:,.0f}<extra></extra>',
+        };
+
+        var trace_matches = {
+            x: round_day_matches, 
+            y: total_player_matches,
+            name: 'matched gurobi',
+            type: 'scatter',
+            mode: 'marker',
+            marker: {
+                size: 11,
+                color: color_gold,
+                symbol: 'star-diamond',
+                line: { // outline needed to contrast with light blue player area
+                    color: color_gurobi, 
+                    width: 0.5
+                }
+            },
+            line: {
+                width: 0,
+                color: color_gold,
+            },
+            hovertemplate: 'Perfect solution!<extra></extra>',
+        };
+
+        var data = [trace_gurobi, trace_player, trace_matches];
+
+        // Define the layout and configs
+        var layout = {
+            //title: 'BurritoOptimizationGame.com', // Skipping for now, but feel free to add back
+            showlegend: false,
+            paper_bgcolor:color_bg,
+            plot_bgcolor:color_bg,
+            width: layout_width,
+            height: layout_height,
+            margin: {
+                l: layout_margin_l,
+                r: layout_margin_r,
+                t: layout_margin_t,
+                b: layout_margin_b,
+            },
+            hovermode: "x",
+            hoverlabel: {
+                font: { 
+                    size: 11,
+                    family: "'Saira Condensed', sans-serif",
+                }
+            },
+            xaxis: {
+                title: '', // placeholder in case we want an asix title
+                titlefont: {
+                    family: "'Saira Condensed', sans-serif",
+                    size: 12,
+                    color: 'grey'
+                },
+                showgrid: false,
+                ticklabelposition: 'outside right',
+                zeroline: false,
+                tickvals: round_day,
+                type: 'category',
+                ticktext : ['Round 1<br>Day 1', '<br>2','<br>3', '<br>4','<br>5', 'Round 2<br>Day 1','<br>2', '<br>3','<br>4', '<br>5'], // TODO: This is a lazily done workaround because I do not know how to 'nest' the axis into Rounds&Days.  THis could be improved.
+                tickfont: {
+                    family: "'Saira Condensed', sans-serif",
+                    size: 11,
+                    color: 'grey'
+                },
+                range: [x_min, x_max]
+            },
+            yaxis: {
+                title: '', // Leaving this blank for now, but it could be 'Total Gurobucks [₲]'
+                titlefont: {
+                    family: "'Saira Condensed', sans-serif",
+                    size: 12,
+                    color: 'grey'
+                },
+                showgrid: false,
+                showline: false,
+                zeroline: false,
+                showticklabels: false,
+                range: [y_min, y_max]
+            },
+            annotations: [
+                { // Add red callout for optimal curve
+                    x: data[0].x[data[0].x.length - 1] - 1,
+                    y: data[0].y[data[0].y.length - 1],
+                    xref: 'x',
+                    yref: 'y',
+                    text: 'Optimal truck placement<br>could have earned you<br>₲' + gurobucks.format(data[0].y[data[0].y.length - 1]) + ' (₲' + gurobucks.format(data[0].y[data[0].y.length - 1] - data[1].y[data[1].y.length - 1]) + ' more)', // TODO: Get better wording.
+                    showarrow: true,
+                    font: {
+                        family: "'Saira Condensed', sans-serif",
+                        size: 11,
+                        color: 'white'
+                    },
+                    align: 'center',
+                    width: annotation_width,
+                    arrowhead: 2,
+                    arrowsize: 1,
+                    arrowwidth: 2,
+                    arrowcolor: color_red,
+                    ax: annotation_ax,
+                    ay: -24,
+                    borderpad: 4,
+                    bgcolor: color_red,
+                },
+                { // Add red callout for player curve
+                    x: data[1].x[data[1].x.length - 1] - 1,
+                    y: data[1].y[data[1].y.length - 1],
+                    xref: 'x',
+                    yref: 'y',
+                    text: 'You made ₲' + gurobucks.format(data[1].y[data[1].y.length - 1])  + '<br>over ' + data[1].x[data[1].x.length - 1] + ' days',
+                    showarrow: true,
+                    font: {
+                        family: "'Saira Condensed', sans-serif",
+                        size: 11,
+                        color: 'white'
+                    },
+                    align: 'center',
+                    width: annotation_width,
+                    arrowhead: 2,
+                    arrowsize: 1,
+                    arrowwidth: 2,
+                    arrowcolor: color_red,
+                    ax: annotation_ax,
+                    ay: 14,
+                    borderpad: 4,
+                    bgcolor: color_red,
+                },
+                { // Add best %
+                    xref: 'x',
+                    yref: 'y',
+                    x: data[0].x[day_best-1]-1, 
+                    y: data[0].y[day_best-1]+ 0.16*y_max,
+                    showarrow: false,
+                    text: '' + (daily_gap[day_best-1]*100).toFixed() + '%',
+                    font: {
+                        family: "'Londrina Solid',cursive",
+                        size: 18,
+                        color: color_red
+                    },
+                    align: 'center',
+                },
+                { // Add worst %
+                    xref: 'x',
+                    yref: 'y',
+                    x: data[0].x[day_worst-1]-1, 
+                    y: data[0].y[day_worst-1]+ 0.16*y_max,
+                    showarrow: false,
+                    text: '' + (daily_gap[day_worst-1]*100).toFixed() + '%',
+                    font: {
+                        family: "'Londrina Solid',cursive",
+                        size: 18,
+                        color: color_red
+                    },
+                    align: 'center',
+                },
+                { // Add best tiny label
+                    xref: 'x',
+                    yref: 'y',
+                    x: data[0].x[day_best-1]-1, 
+                    y: data[0].y[day_best-1]+ 0.12*y_max,
+                    showarrow: false,
+                    text: 'below optimal',
+                    font: {
+                        family: "'Saira Condensed', sans-serif",
+                        size: 8.5,
+                        color: color_red
+                    },
+                    align: 'center',
+                },
+                { // Add worst tiny label
+                    xref: 'x',
+                    yref: 'y',
+                    x: data[0].x[day_worst-1]-1, 
+                    y: data[0].y[day_worst-1]+ 0.12*y_max,
+                    showarrow: false,
+                    text: 'below optimal',
+                    font: {
+                        family: "'Saira Condensed', sans-serif",
+                        size: 8.5,
+                        color: color_red
+                    },
+                    align: 'center',
+                },
+                { // Add text angled label for player text
+                    x: data[1].x[centertext_node_player]-1, 
+                    y: data[1].y[centertext_node_player] - offset_player*scale_y_per_pixel, // added y offset by offset_player pixels
+                    xref: 'x',
+                    yref: 'y',
+                    showarrow: false,
+                    text: 'Your total profit',
+                    font: {
+                        family: "'Londrina Solid',cursive",
+                        size: 16,
+                        color: 'white'
+                    },
+                    align: 'center',
+                    textangle: -textangle_player,
+                },
+                { // Add text angled label for optimal text
+                    x: data[0].x[centertext_node_gurobi]-1, 
+                    y: data[0].y[centertext_node_gurobi] + offset_gurobi*scale_y_per_pixel, // added y offset by offset_gurobi pixels so it sits above
+                    xref: 'x',
+                    yref: 'y',
+                    showarrow: false,
+                    text: 'Optimal total profit',
+                    font: {
+                        family: "'Londrina Solid',cursive",
+                        size: 16,
+                        color: color_gurobi
+                    },
+                    align: 'center',
+                    textangle: -textangle_gurobi,
+                },
+            ],
+            images: [
+                {  // Worst day marker  
+                    source: "https://raw.githubusercontent.com/cozad-gurobi/tmp/67cefff7e1cf6464cb5954309f955a603d8f460e/worstday.svg",
+                    xref: 'x',
+                    yref: 'paper',
+                    x: data[0].x[day_worst-1]-1, 
+                    y: data[0].y[day_worst-1]/y_max+.01, // I could not get "yref: 'y'," to work properly, so I did this weird thing to get the height of the marker
+                    sizex: 1.8,
+                    sizey: 1.8,
+                    opacity: 1,
+                    xanchor: "center",
+                    yanchor: "bottom"
+                }, 
+                {  // Best day marker. TODO: This will look dumb if the two markers overlap much.  
+                    source: "https://raw.githubusercontent.com/cozad-gurobi/tmp/67cefff7e1cf6464cb5954309f955a603d8f460e/bestday.svg",
+                    xref: 'x',
+                    yref: 'paper',
+                    x: data[0].x[day_best-1]-1, 
+                    y: data[0].y[day_best-1]/y_max+.01, 
+                    sizex: 1.8,
+                    sizey: 1.8,
+                    opacity: 1,
+                    xanchor: "center",
+                    yanchor: "bottom"
+                },    
+            ],
+        };
+        
+
+        var config = {
+            displayModeBar: false,
+            //"modeBarButtonsToRemove": ['zoom2d', 'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'resetScale2d', 'zoom3d', 'pan3d', 'orbitRotation', 'tableRotation', 'handleDrag3d', 'resetCameraDefault3d', 'resetCameraLastSave3d', 'hoverClosest3d', 'hoverClosestCartesian', 'hoverCompareCartesian', '', 'zoomInGeo', 'zoomOutGeo', 'resetGeo', 'hoverClosestGeo', 'hoverClosestGl2d', 'hoverClosestPie', 'toggleHover', 'resetViews', 'sendDataToCloud', 'toggleSpikelines', 'resetViewMapbox'], // remove all excep 'toImage'
+            displaylogo: false,
+        };
+
+        Plotly.newPlot(TESTER, data, layout, config)
+        //TODO: Do we awant to add share to LI/twitter/etc.?
+    </script>
+    
+</body>
+
+</html>
